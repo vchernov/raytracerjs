@@ -1,0 +1,17 @@
+{
+  "name": "raytracerjs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "parcel src/index.html -p 3000 --open"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@babel/core": "^7.8.0",
+    "@babel/preset-env": "^7.8.0",
+    "parcel-bundler": "^1.12.4"
+  }
+}
