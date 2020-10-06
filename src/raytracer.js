@@ -13,9 +13,9 @@ const scene = {
         },
         {
             "type": "sphere",
-            "position": [-2, -1.5, -6],
-            "radius": 2,
-            "material": 1
+            "position": [-2, 2.5, -5],
+            "radius": 1.0,
+            "material": 2
         },
         {
             "type": "sphere",
@@ -27,19 +27,24 @@ const scene = {
             "type": "sphere",
             "position": [8, 5, -12],
             "radius": 4,
-            "material": 0
+            "material": 2
         }
     ],
     "materials": [
         {
             "diffuseColor": [0.4, 0.4, 0.3],
-            "albedo": [0.6, 0.3],
+            "albedo": [0.6, 0.3, 0.3],
             "specularExponent": 50
         },
         {
             "diffuseColor": [0.3, 0.1, 0.1],
-            "albedo": [0.9, 0.1],
+            "albedo": [0.9, 0.1, 0],
             "specularExponent": 10
+        },
+        {
+            "diffuseColor": [1.0, 1.0, 1.0],
+            "albedo": [0.0, 10.0, 0.8],
+            "specularExponent": 1425
         }
     ],
     "lights": [
@@ -57,6 +62,9 @@ const scene = {
         }
     ]
 };
+
+const MAX_DEPTH = 4;
+const EPSILON = 0.001;
 
 const length = (v) => {
     return Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
@@ -105,40 +113,70 @@ const rayIntersectSphere = (orig, dir, sphere) => {
 }
 
 const sceneIntersect = (orig, dir) => {
-    let intersectedObj = null;
-    let dist = Number.MAX_SAFE_INTEGER;
+    const intersect = () => {
+        let intersectedObj = null;
+        let dist = Number.MAX_SAFE_INTEGER;
 
-    for (const obj of scene.objects) {
-        if (obj.type == 'sphere') {
-            let hitDist = rayIntersectSphere(orig, dir, obj);
-            if (hitDist !== null && hitDist < dist) {
-                intersectedObj = obj;
-                dist = hitDist;
+        for (const obj of scene.objects) {
+            if (obj.type == 'sphere') {
+                let hitDist = rayIntersectSphere(orig, dir, obj);
+                if (hitDist !== null && hitDist < dist) {
+                    intersectedObj = obj;
+                    dist = hitDist;
+                }
             }
+        }
+
+        return {
+            "obj": intersectedObj,
+            "dist": dist
         }
     }
 
-    return {
-        "obj": intersectedObj,
-        "dist": dist
-    }
-}
-
-const castRay = (orig, dir) => {
-    let collision = sceneIntersect(orig, dir);
-    if (collision.obj !== null) {
+    let collision = intersect();
+    if (collision.obj != null) {
         collision.hitPoint = add(orig, multiply(dir, collision.dist));
         collision.normal = normalize(subtract(collision.hitPoint, collision.obj.position));
-        return getColor(dir, collision, scene.materials[collision.obj.material]);
+        return collision;
     }
-    return scene.camera.backgroundColor;
+
+    return null;
 }
 
-const getColor = (dir, collision, material) => {
+const castRay = (orig, dir, depth) => {
+    if (depth > MAX_DEPTH) {
+        return scene.camera.backgroundColor;
+    }
+
+    let collision = sceneIntersect(orig, dir);
+    if (collision === null) {
+        return scene.camera.backgroundColor;
+    }
+
+    let material = scene.materials[collision.obj.material];
+    let color = getColor(orig, dir, collision, material);
+    if (material.albedo[2] > 0) {
+        let reflectDir = normalize(reflect(dir, collision.normal));
+        let reflectOrig = add(collision.hitPoint, multiply(collision.normal, dot(reflectDir, collision.normal) < 0 ? -EPSILON : EPSILON));
+        let reflectColor = castRay(reflectOrig, reflectDir, depth + 1);
+        color = add(color, multiply(reflectColor, material.albedo[2]));
+    }
+    return color;
+}
+
+const getColor = (orig, dir, collision, material) => {
     let diffuseIntensity = 0;
     let specularIntensity = 0;
     for (const light of scene.lights) {
         let lightDir = normalize(subtract(light.position, collision.hitPoint));
+        let lightDist = length(subtract(light.position, collision.hitPoint));
+
+        let shadowOrig = add(collision.hitPoint, multiply(collision.normal, dot(lightDir, collision.normal) < 0 ? -EPSILON : EPSILON));
+        let shadow = sceneIntersect(shadowOrig, lightDir);
+        if (shadow !== null && length(subtract(shadow.hitPoint, shadowOrig)) < lightDist) {
+            continue;
+        }
+
         diffuseIntensity += Math.max(0, dot(lightDir, collision.normal)) * light.intensity;
         specularIntensity += Math.pow(Math.max(0, dot(reflect(lightDir, collision.normal), dir)), material.specularExponent) * light.intensity;
     }
@@ -171,7 +209,7 @@ const draw = () => {
             let y = -(2 * (j + 0.5) / framebuffer.height - 1) * Math.tan(scene.camera.fov / 2);
             let dir = normalize([x, y, -1]);
 
-            let color = castRay(scene.camera.position, dir);
+            let color = castRay(scene.camera.position, dir, 0);
             let maxIntensity = Math.max(color[0], Math.max(color[1], color[2]));
             if (maxIntensity > 1) {
                 color = multiply(color, 1 / maxIntensity);
