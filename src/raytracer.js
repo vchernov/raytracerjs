@@ -28,6 +28,13 @@ const scene = {
             "position": [8, 5, -12],
             "radius": 4,
             "material": 2
+        },
+        {
+            "type": "plane",
+            "position": [0, -4, -10],
+            "normal": [0, 1, 0],
+            "size": 100,
+            "material": 3
         }
     ],
     "materials": [
@@ -45,6 +52,11 @@ const scene = {
             "diffuseColor": [1.0, 1.0, 1.0],
             "albedo": [0.0, 10.0, 0.8],
             "specularExponent": 1425
+        },
+        {
+            "diffuseColor": [0.3, 0.2, 0.1],
+            "albedo": [1.0, 0.0, 0.0],
+            "specularExponent": 1
         }
     ],
     "lights": [
@@ -112,35 +124,51 @@ const rayIntersectSphere = (orig, dir, sphere) => {
     return t0;
 }
 
-const sceneIntersect = (orig, dir) => {
-    const intersect = () => {
-        let intersectedObj = null;
-        let dist = Number.MAX_SAFE_INTEGER;
+const rayIntersectPlane = (orig, dir, plane) => {
+    let denom = dot(plane.normal, dir);
+    if (Math.abs(denom) > EPSILON) {
+        let t = dot(subtract(plane.position, orig), plane.normal) / denom;
+        if (t >= 0)
+            return t;
+    }
+    return null;
+}
 
-        for (const obj of scene.objects) {
-            if (obj.type == 'sphere') {
-                let hitDist = rayIntersectSphere(orig, dir, obj);
-                if (hitDist !== null && hitDist < dist) {
+const sceneIntersect = (orig, dir) => {
+    let intersectedObj = null;
+    let dist = Number.MAX_SAFE_INTEGER;
+    let hitPoint = null;
+    let normal = null;
+
+    for (const obj of scene.objects) {
+        if (obj.type == 'sphere') {
+            let hitDist = rayIntersectSphere(orig, dir, obj);
+            if (hitDist !== null && hitDist < dist) {
+                intersectedObj = obj;
+                dist = hitDist;
+                hitPoint = add(orig, multiply(dir, hitDist));
+                normal = normalize(subtract(hitPoint, intersectedObj.position));
+            }
+        }
+        else if (obj.type == 'plane') {
+            let hitDist = rayIntersectPlane(orig, dir, obj);
+            if (hitDist !== null && hitDist < dist) {
+                hitPoint = add(orig, multiply(dir, hitDist));
+                if (Math.abs(hitPoint[0] - obj.position[0]) < obj.size && Math.abs(hitPoint[2] - obj.position[2]) < obj.size) {
                     intersectedObj = obj;
                     dist = hitDist;
+                    normal = obj.normal;
                 }
             }
         }
-
-        return {
-            "obj": intersectedObj,
-            "dist": dist
-        }
     }
 
-    let collision = intersect();
-    if (collision.obj != null) {
-        collision.hitPoint = add(orig, multiply(dir, collision.dist));
-        collision.normal = normalize(subtract(collision.hitPoint, collision.obj.position));
-        return collision;
+    return {
+        "obj": intersectedObj,
+        "dist": dist,
+        "hitPoint": hitPoint,
+        "normal": normal
     }
-
-    return null;
 }
 
 const castRay = (orig, dir, depth) => {
@@ -149,7 +177,7 @@ const castRay = (orig, dir, depth) => {
     }
 
     let collision = sceneIntersect(orig, dir);
-    if (collision === null) {
+    if (collision.obj === null) {
         return scene.camera.backgroundColor;
     }
 
@@ -173,7 +201,7 @@ const getColor = (orig, dir, collision, material) => {
 
         let shadowOrig = add(collision.hitPoint, multiply(collision.normal, dot(lightDir, collision.normal) < 0 ? -EPSILON : EPSILON));
         let shadow = sceneIntersect(shadowOrig, lightDir);
-        if (shadow !== null && length(subtract(shadow.hitPoint, shadowOrig)) < lightDist) {
+        if (shadow.obj !== null && length(subtract(shadow.hitPoint, shadowOrig)) < lightDist) {
             continue;
         }
 
